@@ -7,6 +7,7 @@ const PORT = ":8080"
 func main() {
 	server := NewSSEServer()
 	server.SetUp()
-	go broadcast()
+	go publish()
+	//go broadcast()
 	server.Run()
 }
