@@ -47,8 +47,9 @@ func setSSEHeaders(h http.HandlerFunc) http.HandlerFunc {
 func sseHandler(w http.ResponseWriter, r *http.Request) {
 	done := make(chan bool)
 	closeStreamConsumer := make(chan bool)
+	streamCreated := make(chan bool)
 	// Listen for a close event from client
-	//id := uuid.New().String()
+	//id := r.URL.Query().Get("id")
 	id := "mendy"
 	reqChan := r.Context().Done()
 	eventChan := make(chan string)
@@ -59,6 +60,8 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 		close(eventChan)
 	}()
 
+	go publish(id, streamCreated)
+
 	go func() {
 		for {
 			select {
@@ -67,12 +70,13 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 				done <- true
 				return
 			default:
+				time.Sleep(600 * time.Millisecond)
 				data, more := <-eventChan
 				if !more {
 					continue
 				}
 				//fmt.Println(len(data))
-				_, err := fmt.Fprintf(w, "data: %v\n\n", data)
+				_, err := fmt.Fprintf(w, "data: %v\n\n", fmt.Sprintf("[%v]: %v", time.Now().Format(time.RFC3339Nano), data))
 				if err != nil {
 					log.Printf("[ERROR] error sending event to client, %v: %v", r.RemoteAddr, err)
 					return
@@ -81,6 +85,8 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+	<-streamCreated
+	defer close(streamCreated)
 	streamConsumer := NewStreamConsumer(id, done, closeStreamConsumer)
 	streamConsumerChanClose := streamConsumer.Consumer.NotifyClose()
 	defer func() {
@@ -88,4 +94,5 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[INFO] Consumer: %s closed on the stream: %s, reason: %s \n", event.Name, event.StreamName, event.Reason)
 	}()
 	<-closeStreamConsumer
+	defer close(closeStreamConsumer)
 }

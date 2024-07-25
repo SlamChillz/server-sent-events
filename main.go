@@ -5,9 +5,8 @@ package main
 const PORT = ":8080"
 
 func main() {
+	// Create server
 	server := NewSSEServer()
-	server.SetUp()
-	go publish()
-	//go broadcast()
-	server.Run()
+	// Configure and start server
+	server.SetUp().Run()
 }

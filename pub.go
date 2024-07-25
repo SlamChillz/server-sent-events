@@ -7,8 +7,9 @@ import (
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/amqp"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/message"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/stream"
+	"log"
 	"os"
-	"time"
+	"os/exec"
 )
 
 func CheckErr(err error) {
@@ -23,9 +24,9 @@ func handlePublishConfirm(confirms stream.ChannelPublishConfirm) {
 		for confirmed := range confirms {
 			for _, msg := range confirmed {
 				if msg.IsConfirmed() {
-					fmt.Printf("message %s stored \n  ", msg.GetMessage().GetData())
+					log.Printf("message %s stored \n  ", msg.GetMessage().GetData())
 				} else {
-					fmt.Printf("message %s failed \n  ", msg.GetMessage().GetData())
+					log.Printf("message %s failed \n  ", msg.GetMessage().GetData())
 				}
 
 			}
@@ -33,13 +34,7 @@ func handlePublishConfirm(confirms stream.ChannelPublishConfirm) {
 	}()
 }
 
-func publish() {
-	reader := bufio.NewReader(os.Stdin)
-
-	//You need RabbitMQ 3.13.0 or later to run this example
-	fmt.Println("Filtering example.")
-	fmt.Println("Connecting to RabbitMQ streaming ...")
-
+func publish(name string, streamCreated chan<- bool) {
 	// Connect to the broker ( or brokers )
 	env, err := stream.NewEnvironment(
 		stream.NewEnvironmentOptions().
@@ -65,6 +60,8 @@ func publish() {
 	)
 
 	CheckErr(err)
+	streamCreated <- true
+	fmt.Println("Stream created")
 
 	producer, err := env.NewProducer(streamName,
 		stream.NewProducerOptions().SetFilter(
@@ -80,25 +77,58 @@ func publish() {
 	handlePublishConfirm(chPublishConfirm)
 
 	// Send messages with the state property == New York
-	send(producer, "mendy")
-	time.Sleep(2 * time.Second)
-	send(producer, "slam")
-	time.Sleep(2 * time.Second)
+	send(producer, name)
+	//time.Sleep(2 * time.Second)
 	err = producer.Close()
 	CheckErr(err)
-	fmt.Println("Press any key to stop ")
-	_, _ = reader.ReadString('\n')
 	err = env.DeleteStream(streamName)
 	CheckErr(err)
 	err = env.Close()
 	CheckErr(err)
 }
 
-func send(producer *stream.Producer, state string) {
-	for i := 0; i < 100; i++ {
-		msg := amqp.NewMessage([]byte(fmt.Sprintf("message %d, state %s", i, state)))
-		msg.ApplicationProperties = map[string]interface{}{"name": state}
-		err := producer.Send(msg)
-		CheckErr(err)
+func send(producer *stream.Producer, name string) {
+	// Start npm install process
+	cmd := exec.Command("npm", "install", "--prefix", "./test/", "./test")
+	//cmd := exec.Command("/usr/bin/ls", "-l", ".")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatalf("Failed to get stdout pipe: %v", err)
 	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Fatalf("Failed to get stderr pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("Failed to start npm install: %v", err)
+	}
+	done := make(chan bool)
+	go func(done chan<- bool) {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			msg := amqp.NewMessage([]byte(scanner.Text()))
+			msg.ApplicationProperties = map[string]interface{}{"name": name}
+			err := producer.Send(msg)
+			CheckErr(err)
+		}
+		done <- true
+	}(done)
+	go func(done chan<- bool) {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			msg := amqp.NewMessage([]byte(scanner.Text()))
+			msg.ApplicationProperties = map[string]interface{}{"name": name}
+			err := producer.Send(msg)
+			CheckErr(err)
+		}
+		done <- true
+	}(done)
+	err = cmd.Wait()
+	if err != nil {
+		fmt.Printf("npm install failed: %v", err)
+	}
+	<-done
+	log.Println("npm install completed successfully.")
 }

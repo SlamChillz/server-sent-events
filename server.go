@@ -27,7 +27,8 @@ func NewSSEServer() *SSEServer {
 	}
 }
 
-func (s *SSEServer) SetUp() {
+func (s *SSEServer) SetUp() *SSEServer {
+	s.router.Handle("/", http.FileServer(http.Dir("./static")))
 	s.router.Handle("/sse", httpRequestLog(os.Stdout, setSSEHeaders(sseHandler)))
 	go func() {
 		signalChannel := make(chan os.Signal, 1)
@@ -44,6 +45,7 @@ func (s *SSEServer) SetUp() {
 			log.Fatalf("[FATAL] sse server shutdown failed with error: %s\n", err)
 		}
 	}()
+	return s
 }
 
 func (s *SSEServer) Run() {

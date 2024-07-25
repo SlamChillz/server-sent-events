@@ -29,6 +29,7 @@ func init() {
 		log.Fatalf("Failed to declare stream in message broker due to: %v", err)
 	}
 	streamEnvironment = env
+	fmt.Printf("env created\n")
 }
 
 func cretePostFilter(name string) func(*amqp.Message) bool {
@@ -45,6 +46,7 @@ type StreamConsumer struct {
 }
 
 func NewStreamConsumer(name string, done <-chan bool, closeStreamConsumer chan<- bool) *StreamConsumer {
+	log.Printf("Name: %v", name)
 	filter := stream.NewConsumerFilter([]string{name}, true, cretePostFilter(name))
 	consumer, err := streamEnvironment.NewConsumer(
 		streamName,
@@ -60,7 +62,7 @@ func NewStreamConsumer(name string, done <-chan bool, closeStreamConsumer chan<-
 					delete(clients, name)
 					close(msgChan)
 				default:
-					msgChan <- fmt.Sprintf("%s", message.Data)
+					msgChan <- fmt.Sprintf("%s", message.Data[0])
 				}
 			}
 		}(done, closeStreamConsumer),

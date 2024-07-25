@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SSE Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        .sse-data {
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1 id="head" style="text-align: center; width: auto">Deployment Page</h1>
+    <form id="myForm" style="width: auto; display: table-cell; text-align: center; vertical-align: middle">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required>
+        <br><br>
+        <input type="submit" value="Deploy">
+    </form>
+<!--    <div id="sse-data"></div>-->
+
+    <script>
+        document.getElementById('myForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Prevent form submission
+            // Get form values
+            const name = document.getElementById('name').value;
+
+            // Create a new div element with the ID "ss-data"
+            const dataDiv = document.createElement('div');
+            dataDiv.id = 'sse-data';
+            dataDiv.className = 'sse-data';
+
+            // Replace the form with the new div
+            const form = document.getElementById('myForm');
+            // const sseDataElement = document.getElementById("sse-data");
+            const sseDataElement = document.getElementById("head");
+            sseDataElement.innerHTML = "Logs Page"
+            form.parentNode.replaceChild(dataDiv, form);
+
+            // const sseDataElement = document.getElementById("sse-data");
+            // const sseDataElement = document.getElementById("head");
+            // sseDataElement.innerHTML = "Logs Page"
+
+            // Create an EventSource to listen to the /sse endpoint
+            const eventSource = new EventSource(new URL("http://localhost:8080/sse?name=mendy"));
+
+            // Event listener for messages received from the server
+            eventSource.onmessage = function(event) {
+                const data = event.data;
+                appendDataToDiv(data);
+            };
+
+            // Event listener for SSE errors
+            eventSource.onerror = function(event) {
+                console.error("SSE Error:", event);
+            };
+
+            // Function to append data to the SSE data div
+            function appendDataToDiv(data) {
+                const p = document.createElement("p");
+                p.innerHTML = `<b>${data}</b>`;
+                dataDiv.appendChild(p);
+            }
+        });
+    </script>
+</body>
+</html>
