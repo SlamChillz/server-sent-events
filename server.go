@@ -29,7 +29,7 @@ func NewSSEServer() *SSEServer {
 
 func (s *SSEServer) SetUp() *SSEServer {
 	s.router.Handle("/", http.FileServer(http.Dir("./static")))
-	s.router.Handle("/sse", httpRequestLog(os.Stdout, setSSEHeaders(sseHandler)))
+	s.router.Handle("/sse/{id}", httpRequestLog(os.Stdout, setSSEHeaders(sseHandler)))
 	go func() {
 		signalChannel := make(chan os.Signal, 1)
 		signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)

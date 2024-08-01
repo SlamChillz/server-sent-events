@@ -16,6 +16,9 @@ run: clean build
 	./sse
 .PHONY: run
 
+air:
+	@air
+
 clean:
 	@rm sse | tee /dev/stderr
 .PHONY: clean

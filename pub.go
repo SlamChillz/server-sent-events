@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/amqp"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"time"
 )
 
 func CheckErr(err error) {
@@ -78,57 +80,54 @@ func publish(name string, streamCreated chan<- bool) {
 
 	// Send messages with the state property == New York
 	send(producer, name)
-	//time.Sleep(2 * time.Second)
+	time.Sleep(2 * time.Second)
 	err = producer.Close()
 	CheckErr(err)
-	err = env.DeleteStream(streamName)
-	CheckErr(err)
-	err = env.Close()
-	CheckErr(err)
+	//err = env.DeleteStream(streamName)
+	//CheckErr(err)
+	//err = env.Close()
+	//CheckErr(err)
 }
 
 func send(producer *stream.Producer, name string) {
 	// Start npm install process
-	cmd := exec.Command("npm", "install", "--prefix", "./test/", "./test")
+	cmd := exec.Command("sh", "-c", "cd test; npm install; cd ..")
+	//cmd := exec.Command("sh", "-c", "echo stdout; echo 1>&2 stderr")
 	//cmd := exec.Command("/usr/bin/ls", "-l", ".")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Fatalf("Failed to get stdout pipe: %v", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		log.Fatalf("Failed to get stderr pipe: %v", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		log.Fatalf("Failed to start npm install: %v", err)
+	out := bytes.NewBuffer(nil)
+	cmd.Stderr = out
+	cmd.Stdout = out
+	//stdout, err := cmd.StdoutPipe()
+	//if err != nil {
+	//	log.Fatalf("Failed to get stdout pipe: %v", err)
+	//}
+	if err := cmd.Run(); err != nil {
+		log.Fatalf("Failed to run npm install: %v", err)
 	}
 	done := make(chan bool)
+	defer close(done)
 	go func(done chan<- bool) {
-		scanner := bufio.NewScanner(stdout)
+		count := 0
+		scanner := bufio.NewScanner(out)
 		for scanner.Scan() {
 			msg := amqp.NewMessage([]byte(scanner.Text()))
 			msg.ApplicationProperties = map[string]interface{}{"name": name}
 			err := producer.Send(msg)
 			CheckErr(err)
+			count++
 		}
+		msg := amqp.NewMessage([]byte("done"))
+		msg.ApplicationProperties = map[string]interface{}{"name": name}
+		err := producer.Send(msg)
+		CheckErr(err)
+		fmt.Printf("message count sent: %d\n", count+1)
 		done <- true
+		fmt.Println("Exiting send goroutine")
 	}(done)
-	go func(done chan<- bool) {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			msg := amqp.NewMessage([]byte(scanner.Text()))
-			msg.ApplicationProperties = map[string]interface{}{"name": name}
-			err := producer.Send(msg)
-			CheckErr(err)
-		}
-		done <- true
-	}(done)
-	err = cmd.Wait()
-	if err != nil {
-		fmt.Printf("npm install failed: %v", err)
-	}
+	//err := cmd.Wait()
+	//if err != nil {
+	//	fmt.Printf("npm install failed: %v\n", err)
+	//}
 	<-done
 	log.Println("npm install completed successfully.")
 }

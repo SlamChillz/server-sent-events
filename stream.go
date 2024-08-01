@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/amqp"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/stream"
@@ -9,6 +10,7 @@ import (
 
 const streamName = "sslogs"
 
+var count = 0
 var streamEnvironment *stream.Environment
 
 func init() {
@@ -29,7 +31,6 @@ func init() {
 		log.Fatalf("Failed to declare stream in message broker due to: %v", err)
 	}
 	streamEnvironment = env
-	fmt.Printf("env created\n")
 }
 
 func cretePostFilter(name string) func(*amqp.Message) bool {
@@ -46,24 +47,32 @@ type StreamConsumer struct {
 }
 
 func NewStreamConsumer(name string, done <-chan bool, closeStreamConsumer chan<- bool) *StreamConsumer {
-	log.Printf("Name: %v", name)
 	filter := stream.NewConsumerFilter([]string{name}, true, cretePostFilter(name))
 	consumer, err := streamEnvironment.NewConsumer(
 		streamName,
 		func(done <-chan bool, closeStreamConsumer chan<- bool) func(ctx stream.ConsumerContext, message *amqp.Message) {
 			return func(ctx stream.ConsumerContext, message *amqp.Message) {
+				count++
+				fmt.Printf("%v\n", count)
 				msgChan, ok := clients[name]
 				if !ok {
 					return
 				}
 				select {
 				case <-done:
+					// At this point the client might still have realtime logs coming in
+					// So decide what to do considering all cases
+					// Should we save the logs till the client reconnects? If yes, track the offset of the consumer stream
+					// Should we just discard the logs?
 					closeStreamConsumer <- true
-					delete(clients, name)
-					close(msgChan)
 				default:
-					msgChan <- fmt.Sprintf("%s", message.Data[0])
+					var buffer bytes.Buffer
+					for _, slice := range message.Data {
+						buffer.Write(slice)
+					}
+					msgChan <- fmt.Sprintf("%s", buffer.String())
 				}
+				fmt.Printf("message count received: %d\n", count)
 			}
 		}(done, closeStreamConsumer),
 		stream.NewConsumerOptions().
