@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -38,12 +39,14 @@ func handlePublishConfirm(confirms stream.ChannelPublishConfirm) {
 
 func publish(name string, streamCreated chan<- bool) {
 	// Connect to the broker ( or brokers )
+	RabbitPort, err := strconv.Atoi(os.Getenv("R_PORT"))
+	CheckErr(err)
 	env, err := stream.NewEnvironment(
 		stream.NewEnvironmentOptions().
-			SetHost("localhost").
-			SetPort(5552).
-			SetUser("guest").
-			SetPassword("guest"))
+			SetHost(os.Getenv("R_HOST")).
+			SetPort(RabbitPort).
+			SetUser(os.Getenv("R_USER")).
+			SetPassword(os.Getenv("R_PASSWORD")))
 	CheckErr(err)
 
 	err = env.DeleteStream(streamName)
@@ -107,22 +110,18 @@ func send(producer *stream.Producer, name string) {
 	done := make(chan bool)
 	defer close(done)
 	go func(done chan<- bool) {
-		count := 0
 		scanner := bufio.NewScanner(out)
 		for scanner.Scan() {
 			msg := amqp.NewMessage([]byte(scanner.Text()))
 			msg.ApplicationProperties = map[string]interface{}{"name": name}
 			err := producer.Send(msg)
 			CheckErr(err)
-			count++
 		}
 		msg := amqp.NewMessage([]byte("done"))
 		msg.ApplicationProperties = map[string]interface{}{"name": name}
 		err := producer.Send(msg)
 		CheckErr(err)
-		fmt.Printf("message count sent: %d\n", count+1)
 		done <- true
-		fmt.Println("Exiting send goroutine")
 	}(done)
 	//err := cmd.Wait()
 	//if err != nil {
