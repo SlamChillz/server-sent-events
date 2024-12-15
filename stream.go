@@ -6,20 +6,23 @@ import (
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/amqp"
 	"github.com/rabbitmq/rabbitmq-stream-go-client/pkg/stream"
 	"log"
+	"os"
+	"strconv"
 )
 
 const streamName = "sslogs"
 
-var count = 0
 var streamEnvironment *stream.Environment
 
 func init() {
+	RabbitPort, err := strconv.Atoi(os.Getenv("R_PORT"))
+	CheckErr(err)
 	env, err := stream.NewEnvironment(
 		stream.NewEnvironmentOptions().
-			SetHost("localhost").
-			SetPort(5552).
-			SetUser("guest").
-			SetPassword("guest"))
+			SetHost(os.Getenv("R_HOST")).
+			SetPort(RabbitPort).
+			SetUser(os.Getenv("R_USER")).
+			SetPassword(os.Getenv("R_PASSWORD")))
 	if err != nil {
 		log.Fatalf("Failed to connect to message broker due to: %v", err)
 	}
@@ -52,8 +55,6 @@ func NewStreamConsumer(name string, done <-chan bool, closeStreamConsumer chan<-
 		streamName,
 		func(done <-chan bool, closeStreamConsumer chan<- bool) func(ctx stream.ConsumerContext, message *amqp.Message) {
 			return func(ctx stream.ConsumerContext, message *amqp.Message) {
-				count++
-				fmt.Printf("%v\n", count)
 				msgChan, ok := clients[name]
 				if !ok {
 					return
@@ -72,7 +73,6 @@ func NewStreamConsumer(name string, done <-chan bool, closeStreamConsumer chan<-
 					}
 					msgChan <- fmt.Sprintf("%s", buffer.String())
 				}
-				fmt.Printf("message count received: %d\n", count)
 			}
 		}(done, closeStreamConsumer),
 		stream.NewConsumerOptions().
