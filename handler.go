@@ -48,9 +48,17 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 	done := make(chan bool)
 	closeStreamConsumer := make(chan bool)
 	streamCreated := make(chan bool)
+	defer func() {
+		close(done)
+		close(streamCreated)
+		close(closeStreamConsumer)
+	}()
 	// Listen for a close event from client
-	//id := r.URL.Query().Get("id")
-	id := "mendy"
+	id := r.PathValue("id")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	reqChan := r.Context().Done()
 	eventChan := make(chan string)
 	clients[id] = eventChan
@@ -71,10 +79,10 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			default:
 				//time.Sleep(600 * time.Millisecond)
-				data, _ := <-eventChan
-				//if !more {
-				//	continue
-				//}
+				data, more := <-eventChan
+				if !more {
+					continue
+				}
 				if data == "done" {
 					closeStreamConsumer <- true
 					//delete(clients, id)
@@ -82,7 +90,6 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 					fmt.Printf("[INFO] %v client has been sent all its log data\n", r.RemoteAddr)
 					return
 				}
-				//fmt.Println(len(data))
 				_, err := fmt.Fprintf(w, "data: %v\n\n", fmt.Sprintf("[%v]: %v", time.Now().Format(time.RFC3339Nano), data))
 				if err != nil {
 					log.Printf("[ERROR] error sending event to client, %v: %v", r.RemoteAddr, err)
@@ -96,8 +103,8 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 	streamConsumer := NewStreamConsumer(id, done, closeStreamConsumer)
 	streamConsumerChanClose := streamConsumer.Consumer.NotifyClose()
 	defer func() {
-		close(streamCreated)
-		close(closeStreamConsumer)
+		//close(streamCreated)
+		//close(closeStreamConsumer)
 		fmt.Printf("[INFO] closed consumer %s stream\n", id)
 		event := <-streamConsumerChanClose
 		log.Printf("[INFO] Consumer: %s closed on the stream: %s, reason: %s \n", event.Name, event.StreamName, event.Reason)
