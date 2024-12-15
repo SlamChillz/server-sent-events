@@ -21,3 +21,6 @@ go.work.sum
 
 # log files
 *.log
+
+# misc
+.idea

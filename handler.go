@@ -46,30 +46,44 @@ func setSSEHeaders(h http.HandlerFunc) http.HandlerFunc {
 
 func sseHandler(w http.ResponseWriter, r *http.Request) {
 	done := make(chan bool)
+	closeStreamConsumer := make(chan bool)
+	streamCreated := make(chan bool)
 	// Listen for a close event from client
+	//id := r.URL.Query().Get("id")
+	id := "mendy"
 	reqChan := r.Context().Done()
 	eventChan := make(chan string)
-	clients[eventChan] = reqChan
+	clients[id] = eventChan
 
 	defer func() {
-		delete(clients, eventChan)
+		delete(clients, id)
 		close(eventChan)
 	}()
+
+	go publish(id, streamCreated)
 
 	go func() {
 		for {
 			select {
 			case <-reqChan:
 				log.Printf("[INFO] %v client closed connection", r.RemoteAddr)
-				close(done)
+				done <- true
 				return
 			default:
-				data, more := <-eventChan
-				if !more {
-					continue
+				//time.Sleep(600 * time.Millisecond)
+				data, _ := <-eventChan
+				//if !more {
+				//	continue
+				//}
+				if data == "done" {
+					closeStreamConsumer <- true
+					//delete(clients, id)
+					//close(eventChan)
+					fmt.Printf("[INFO] %v client has been sent all its log data\n", r.RemoteAddr)
+					return
 				}
-				fmt.Println(len(data))
-				_, err := fmt.Fprintf(w, "data: %v\n\n", data)
+				//fmt.Println(len(data))
+				_, err := fmt.Fprintf(w, "data: %v\n\n", fmt.Sprintf("[%v]: %v", time.Now().Format(time.RFC3339Nano), data))
 				if err != nil {
 					log.Printf("[ERROR] error sending event to client, %v: %v", r.RemoteAddr, err)
 					return
@@ -78,5 +92,20 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	<-done
+	<-streamCreated
+	streamConsumer := NewStreamConsumer(id, done, closeStreamConsumer)
+	streamConsumerChanClose := streamConsumer.Consumer.NotifyClose()
+	defer func() {
+		close(streamCreated)
+		close(closeStreamConsumer)
+		fmt.Printf("[INFO] closed consumer %s stream\n", id)
+		event := <-streamConsumerChanClose
+		log.Printf("[INFO] Consumer: %s closed on the stream: %s, reason: %s \n", event.Name, event.StreamName, event.Reason)
+	}()
+	<-closeStreamConsumer
+	err := streamConsumer.Consumer.Close()
+	if err != nil {
+		fmt.Printf("Error closing consumer %s stream: %v\n", id, err)
+		return
+	}
 }
